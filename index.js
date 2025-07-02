@@ -31,39 +31,52 @@ app.post('/slack/commands', async (req, res) => {
   const { command, text, user_id } = req.body;
 
   if (command === '/start_puzzle') {
-    const usersList = [user_id, ...text.split('').map(user => user.replace('@', ''))];
-    if (usersList.length < 3) {
-      res.status(200).send('Please invite at least 2 other users for the game.');
+    const usersList = [user_id, ...text.split(' ').map(user => user.replace('@', ''))];
+    const numberOfUsers = usersList.length;
+
+    if (numberOfUsers < 3) {
+      res.status(200).send('Please invite at least 2 other users along with yourself for a total of at least 3 participants.');
       return;
     }
 
     try {
-      // Create a new channel
-      const channelName = `puzzle-game-${Date.now()}`;
-      const createChannelResponse = await webClient.conversations.create({
-        name: channelName,
-        is_private: true,
-      });
+      const createGames = async (group) => {
+        const channelName = `puzzle-game-${Date.now()}`;
+        const createChannelResponse = await webClient.conversations.create({
+          name: channelName,
+          is_private: true,
+        });
+        const channelId = createChannelResponse.channel.id;
+        await webClient.conversations.invite({
+          channel: channelId,
+          users: group.join(',')
+        });
+        await webClient.chat.postMessage({
+          channel: channelId,
+          text: `Welcome to the Situation Puzzle Game!`
+        });
+      };
 
-      const channelId = createChannelResponse.channel.id;
+      // Group users into batches of 3
+      for (let i = 0; i < numberOfUsers; i += 3) {
+        const group = usersList.slice(i, i + 3);
+        if (group.length === 1 && numberOfUsers > 4) {
+          // If there’s an orphan user and the total number exceeds 4, include this user in the previous group
+          break;
+        } else if (group.length < 3 && group.length > 1) {
+          // Create a new channel for the remainder users if more than 1 and less than 3
+          await createGames(group);
+        } else if (group.length === 3) {
+          // Create a new channel for every batch of 3
+          await createGames(group);
+        }
+      }
 
-      // Invite users to the channel
-      const inviteResponse = await webClient.conversations.invite({
-        channel: channelId,
-        users: usersList.join(',')
-      });
-
-      // Send initial puzzle and instructions to the channel
-      await webClient.chat.postMessage({
-        channel: channelId,
-        text: `Welcome to the Situation Puzzle Game! Here's your puzzle: [Insert Puzzle Here]`
-      });
-
-      res.status(200).send('Game started successfully.');
+      res.status(200).send('Games started successfully.');
 
     } catch (error) {
       console.error(error);
-      res.status(500).send('Failed to start the game.');
+      res.status(500).send('Failed to start the games.');
     }
   } else {
     res.status(200).send();
