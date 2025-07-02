@@ -1,0 +1,20 @@
+{
+  "name": "slack-situation-puzzle-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@slack/rtm-api": "^7.0.3",
+    "@slack/web-api": "^7.9.3",
+    "body-parser": "^2.2.0",
+    "dotenv": "^17.0.1",
+    "express": "^5.1.0",
+    "openai": "^5.8.2"
+  }
+}
