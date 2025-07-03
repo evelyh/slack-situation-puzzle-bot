@@ -1,5 +1,3 @@
-// index.js
-
 const { WebClient, RTMClient } = require('@slack/web-api');
 const { createEventAdapter } = require('@slack/events-api');
 const express = require('express');
@@ -32,6 +30,9 @@ app.use('/slack/events', slackEvents.expressMiddleware());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
+// Define the sessions object to store game sessions
+const sessions = {};
+
 app.post('/slack/commands', async (req, res) => {
   const { command, text, user_id } = req.body;
 
@@ -61,7 +62,6 @@ app.post('/slack/commands', async (req, res) => {
           text: `Welcome to the Situation Puzzle Game!`
         });
 
-        // Generate a puzzle using GPT
         try {
           const puzzleResponse = await openai.createChatCompletion({
             model: "gpt-4o",
@@ -79,7 +79,6 @@ app.post('/slack/commands', async (req, res) => {
             puzzle: { prompt: prompt.trim(), answer },
             conversationHistory: [],
             noCount: 0,
-            hintsGiven: false,
             solved: false,
           };
 
@@ -96,13 +95,10 @@ app.post('/slack/commands', async (req, res) => {
       for (let i = 0; i < numberOfUsers; i += 3) {
         const group = usersList.slice(i, i + 3);
         if (group.length === 1 && numberOfUsers > 4) {
-          // If there’s an orphan user and the total number exceeds 4, include this user in the previous group
           break;
         } else if (group.length < 3 && group.length > 1) {
-          // Create a new channel for the remainder users if more than 1 and less than 3
           await createGames(group);
         } else if (group.length === 3) {
-          // Create a new channel for every batch of 3
           await createGames(group);
         }
       }
@@ -123,7 +119,7 @@ slackEvents.on('message', async (event) => {
     return;
   }
 
-  const session = sessions[event.channel];
+  const session = sessions[event.channelId];
 
   if (session && !session.solved) {
     session.conversationHistory = session.conversationHistory || [];
@@ -164,14 +160,13 @@ slackEvents.on('message', async (event) => {
         session.noCount = 0;
       }
 
-      if (session.noCount >= 5 && !session.hintsGiven) {
+      if (session.noCount = 5) {
         const hint = "Here's a hint to help you out: " + session.puzzle.answer.split('. ')[0] + ".";
         await webClient.chat.postMessage({
           channel: event.channel,
           text: hint,
         });
         session.noCount = 0;
-        session.hintsGiven = true;
       }
 
     } catch (error) {
@@ -180,7 +175,6 @@ slackEvents.on('message', async (event) => {
   } else if (session && session.solved && event.text.toLowerCase() === 'yes') {
     // Start a new puzzle round
     session.solved = false;
-    session.hintsGiven = false;
     session.noCount = 0;
     session.conversationHistory = [];
 
