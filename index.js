@@ -5,6 +5,7 @@ const { createEventAdapter } = require('@slack/events-api');
 const express = require('express');
 const bodyParser = require('body-parser');
 const { Configuration, OpenAIApi } = require('openai');
+const fs = require('fs');
 require('dotenv').config();
 
 const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
@@ -22,6 +23,10 @@ const configuration = new Configuration({
   apiKey: gpt4oApiKey,
 });
 const openai = new OpenAIApi(configuration);
+
+const customizationPrompt = fs.readFileSync('./puzzle_prompt.txt', 'utf-8').replace(/\n/g, ' ');
+const generatePuzzlePrompt = "Generate a creative and engaging situation puzzle. Provide a prompt and a detailed answer.";
+const formatPrompt = 'Please provide the output in the following format: "Prompt: <puzzle prompt> Answer: <detailed answer>".';
 
 app.use('/slack/events', slackEvents.expressMiddleware());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -55,6 +60,36 @@ app.post('/slack/commands', async (req, res) => {
           channel: channelId,
           text: `Welcome to the Situation Puzzle Game!`
         });
+
+        // Generate a puzzle using GPT
+        try {
+          const puzzleResponse = await openai.createChatCompletion({
+            model: "gpt-4o",
+            messages: [
+              { role: "system", content: `${generatePuzzlePrompt} ${formatPrompt}` }
+            ],
+            max_tokens: 300,
+          });
+
+          const puzzle = puzzleResponse.data.choices[0].message.content;
+          const [prompt, ...answerParts] = puzzle.split('Answer:');
+          const answer = answerParts.join('Answer:').trim();
+
+          sessions[channelId] = {
+            puzzle: { prompt: prompt.trim(), answer },
+            conversationHistory: [],
+            noCount: 0,
+            hintsGiven: false,
+            solved: false,
+          };
+
+          await webClient.chat.postMessage({
+            channel: channelId,
+            text: `Here is your puzzle: ${prompt.trim()}`
+          });
+        } catch (error) {
+          console.error("Failed to generate puzzle:", error);
+        }
       };
 
       // Group users into batches of 3
@@ -88,23 +123,89 @@ slackEvents.on('message', async (event) => {
     return;
   }
 
-  try {
-    // Use GPT-4O to respond to messages in puzzle channels
-    const gptResponse = await openai.createChatCompletion({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: "You are a helpful assistant in a situation puzzle game." },
-        { role: "user", content: event.text }
-      ],
-      max_tokens: 150,
-    });
+  const session = sessions[event.channel];
 
-    await webClient.chat.postMessage({
-      channel: event.channel,
-      text: gptResponse.data.choices[0].message.content,
-    });
-  } catch (error) {
-    console.error(error);
+  if (session && !session.solved) {
+    session.conversationHistory = session.conversationHistory || [];
+    session.conversationHistory.push({ role: "user", content: event.text });
+
+    const messages = [
+      { role: "system", content: customizationPrompt },
+      { role: "user", content: `Here is the puzzle: ${session.puzzle.prompt}` },
+      { role: "user", content: `The detailed answer to the puzzle is: ${session.puzzle.answer}` },
+    ];
+
+    session.conversationHistory.forEach(message => messages.push(message));
+
+    try {
+      const gptResponse = await openai.createChatCompletion({
+        model: "gpt-4o",
+        messages,
+        max_tokens: 150,
+      });
+
+      const gptMessage = gptResponse.data.choices[0].message.content;
+      session.conversationHistory.push({ role: "assistant", content: gptMessage });
+
+      await webClient.chat.postMessage({
+        channel: event.channel,
+        text: gptMessage,
+      });
+
+      if (gptMessage.toLowerCase().includes('solved')) {
+        session.solved = true;
+        await webClient.chat.postMessage({
+          channel: event.channel,
+          text: "Congratulations! You've solved the puzzle! Would you like to play another round? Reply with 'yes' to start a new puzzle."
+        });
+      } else if (gptMessage.toLowerCase().includes('no')) {
+        session.noCount++;
+      } else {
+        session.noCount = 0;
+      }
+
+      if (session.noCount >= 5 && !session.hintsGiven) {
+        const hint = "Here's a hint to help you out: " + session.puzzle.answer.split('. ')[0] + ".";
+        await webClient.chat.postMessage({
+          channel: event.channel,
+          text: hint,
+        });
+        session.noCount = 0;
+        session.hintsGiven = true;
+      }
+
+    } catch (error) {
+      console.error(error);
+    }
+  } else if (session && session.solved && event.text.toLowerCase() === 'yes') {
+    // Start a new puzzle round
+    session.solved = false;
+    session.hintsGiven = false;
+    session.noCount = 0;
+    session.conversationHistory = [];
+
+    try {
+      const puzzleResponse = await openai.createChatCompletion({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: `${generatePuzzlePrompt} ${formatPrompt}` }
+        ],
+        max_tokens: 300,
+      });
+
+      const puzzle = puzzleResponse.data.choices[0].message.content;
+      const [prompt, ...answerParts] = puzzle.split('Answer:');
+      const answer = answerParts.join('Answer:').trim();
+
+      session.puzzle = { prompt: prompt.trim(), answer };
+
+      await webClient.chat.postMessage({
+        channel: event.channel,
+        text: `Here is your new puzzle: ${prompt.trim()}`
+      });
+    } catch (error) {
+      console.error("Failed to generate new puzzle:", error);
+    }
   }
 });
 
