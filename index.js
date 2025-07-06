@@ -1,9 +1,10 @@
-const { WebClient, RTMClient } = require('@slack/web-api');
+const { WebClient } = require('@slack/web-api');
 const { createEventAdapter } = require('@slack/events-api');
 const express = require('express');
 const bodyParser = require('body-parser');
-const { Configuration, OpenAIApi } = require('openai');
+const { OpenAI } = require('openai');
 const fs = require('fs');
+const serverlessExpress = require('@vendia/serverless-express');
 require('dotenv').config();
 
 const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
@@ -15,12 +16,10 @@ const port = process.env.PORT || 3000;
 
 const slackEvents = createEventAdapter(slackSigningSecret);
 const webClient = new WebClient(slackToken);
-const rtmClient = new RTMClient(slackToken);
 
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: gpt4oApiKey,
 });
-const openai = new OpenAIApi(configuration);
 
 const customizationPrompt = fs.readFileSync('./puzzle_prompt.txt', 'utf-8').replace(/\n/g, ' ');
 const generatePuzzlePrompt = "Generate a creative and engaging situation puzzle. Provide a prompt and a detailed answer.";
@@ -33,10 +32,34 @@ app.use(bodyParser.json());
 // Define the sessions object to store game sessions
 const sessions = {};
 
+// // Middleware to verify Slack requests
+// app.use((req, res, next) => {
+//   const slackSignature = req.headers['x-slack-signature'];
+//   const slackTimestamp = req.headers['x-slack-request-timestamp'];
+
+//   // Protect against replay attacks
+//   const time = Math.floor(new Date().getTime() / 1000);
+//   if (Math.abs(time - slackTimestamp) > 300) {
+//     return res.status(400).send('Ignore this request.');
+//   }
+
+//   const sigBasestring = `v0:${slackTimestamp}:${JSON.stringify(req.body)}`;
+//   const mySignature = `v0=${crypto
+//     .createHmac('sha256', process.env.SLACK_SIGNING_SECRET)
+//     .update(sigBasestring, 'utf8')
+//     .digest('hex')}`;
+
+//   if (crypto.timingSafeEqual(Buffer.from(mySignature, 'utf8'), Buffer.from(slackSignature, 'utf8'))) {
+//     next();
+//   } else {
+//     res.status(400).send('Verification failed');
+//   }
+// });
+
 app.post('/slack/commands', async (req, res) => {
   const { command, text, user_id } = req.body;
 
-  if (command === '/start_puzzle') {
+  if (command === '/start-puzzle') {
     const usersList = [user_id, ...text.split(' ').map(user => user.replace('@', ''))];
     const numberOfUsers = usersList.length;
 
@@ -160,7 +183,7 @@ slackEvents.on('message', async (event) => {
         session.noCount = 0;
       }
 
-      if (session.noCount = 5) {
+      if (session.noCount === 5) {
         const hint = "Here's a hint to help you out: " + session.puzzle.answer.split('. ')[0] + ".";
         await webClient.chat.postMessage({
           channel: event.channel,
@@ -203,8 +226,17 @@ slackEvents.on('message', async (event) => {
   }
 });
 
-rtmClient.start();
+app.post('/slack/events', (req, res) => {
+  if (req.body && req.body.challenge) {
+    res.status(200).send(req.body.challenge);
+  } else {
+    res.status(400).send('Invalid request');
+  }
+});
 
 app.listen(port, () => {
   console.log(`Bot is running on port ${port}`);
 });
+
+
+module.exports.handler = serverlessExpress({ app });
