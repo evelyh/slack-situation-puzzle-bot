@@ -2,6 +2,7 @@ require("dotenv").config();
 const { App, AwsLambdaReceiver } = require("@slack/bolt");
 const fs = require("fs");
 const setupEventListeners = require("./eventListeners");
+const sessions = require("./sessions");
 
 const awsLambdaReceiver = new AwsLambdaReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET,
@@ -16,9 +17,6 @@ const app = new App({
 const customizationPrompt = fs
   .readFileSync("./puzzle_prompt.txt", "utf-8")
   .replace(/\n/g, " ");
-
-// Define the sessions object to store game sessions
-const sessions = {};
 
 setupEventListeners(app, sessions, customizationPrompt);
 

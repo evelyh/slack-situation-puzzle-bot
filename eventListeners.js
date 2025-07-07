@@ -1,6 +1,7 @@
-const { postToGPT, findUserId, createGames, generationBody } = require("./helpers");
+const { postToGPT, findUserId, createGames, getAPuzzle } = require("./helpers");
+const sessions = require("./sessions");
 
-const setupEventListeners = (app, sessions, customizationPrompt) => {
+const setupEventListeners = (app, customizationPrompt) => {
   // Event listener for the "start-puzzle" slash command
   app.command("/start-puzzle", async ({ command, ack, respond, client }) => {
     try {
@@ -47,12 +48,15 @@ const setupEventListeners = (app, sessions, customizationPrompt) => {
 
   // Event listener for messages
   app.message(async ({ message, say, client }) => {
+    console.log("Received message:", message);
+    console.log("All sessions:", sessions);
     try {
       if (message.subtype && message.subtype === "bot_message") {
         return;
       }
 
       const session = sessions[message.channel];
+      console.log("Current session:", session);
 
       if (session && !session.solved) {
         session.conversationHistory = session.conversationHistory || [];
@@ -110,19 +114,7 @@ const setupEventListeners = (app, sessions, customizationPrompt) => {
         session.solved &&
         message.text.toLowerCase() === "yes"
       ) {
-        session.solved = false;
-        session.noCount = 0;
-        session.conversationHistory = [];
-
-        const puzzleResponse = await postToGPT(generationBody);
-
-        const puzzle = puzzleResponse.choices[0].message.content;
-        const [prompt, ...answerParts] = puzzle.split("Answer:");
-        const answer = answerParts.join("Answer:").trim();
-
-        session.puzzle = { prompt: prompt.trim(), answer };
-
-        await say(`Here is your new puzzle: ${prompt.trim()}`);
+        await getAPuzzle(client, message.channel, sessions);
       }
     } catch (error) {
       console.error("Error handling message:", error);
