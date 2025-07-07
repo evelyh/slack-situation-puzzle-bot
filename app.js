@@ -2,7 +2,6 @@ require("dotenv").config();
 const { App, AwsLambdaReceiver } = require("@slack/bolt");
 const fs = require("fs");
 const setupEventListeners = require("./eventListeners");
-const sessions = require("./sessions");
 
 const awsLambdaReceiver = new AwsLambdaReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET,
@@ -18,7 +17,7 @@ const customizationPrompt = fs
   .readFileSync("./puzzle_prompt.txt", "utf-8")
   .replace(/\n/g, " ");
 
-setupEventListeners(app, sessions, customizationPrompt);
+setupEventListeners(app, customizationPrompt);
 
 // Start the app
 module.exports.handler = async (event, context, callback) => {

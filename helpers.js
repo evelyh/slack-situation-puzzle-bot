@@ -54,6 +54,7 @@ const findUserId = async (username, client) => {
 const getAPuzzle = async (client, channelId) => {
   try {
     const puzzleResponse = await postToGPT(generationBody);
+    console.log("Puzzle response:", puzzleResponse);
 
     const puzzle = puzzleResponse.choices[0].message.content;
     const promptMatch = puzzle.match(/Prompt:\s*(.*)\s*Answer:/);

@@ -6,6 +6,7 @@ const setupEventListeners = (app, customizationPrompt) => {
   app.command("/start-puzzle", async ({ command, ack, respond, client }) => {
     try {
       await ack();
+      await respond("Starting a game...");
 
       const usersList = [
         ...command.text.split(" ").map((user) => user.replace("@", "")),
@@ -33,13 +34,13 @@ const setupEventListeners = (app, customizationPrompt) => {
         if (group.length === 1 && numberOfUsers > 4) {
           break;
         } else if (group.length < 3 && group.length > 1) {
-          await createGames(group, client, sessions);
+          await createGames(group, client);
         } else if (group.length === 3) {
-          await createGames(group, client, sessions);
+          await createGames(group, client);
         }
       }
 
-      await respond("Games started successfully.");
+      await respond("Games started, please head to the newly created channel.");
     } catch (error) {
       console.error("Error handling /start-puzzle command:", error);
       await respond("Failed to start the games.");
@@ -48,15 +49,12 @@ const setupEventListeners = (app, customizationPrompt) => {
 
   // Event listener for messages
   app.message(async ({ message, say, client }) => {
-    console.log("Received message:", message);
-    console.log("All sessions:", sessions);
     try {
       if (message.subtype && message.subtype === "bot_message") {
         return;
       }
 
       const session = sessions[message.channel];
-      console.log("Current session:", session);
 
       if (session && !session.solved) {
         session.conversationHistory = session.conversationHistory || [];
@@ -114,7 +112,7 @@ const setupEventListeners = (app, customizationPrompt) => {
         session.solved &&
         message.text.toLowerCase() === "yes"
       ) {
-        await getAPuzzle(client, message.channel, sessions);
+        await getAPuzzle(client, message.channel);
       }
     } catch (error) {
       console.error("Error handling message:", error);
